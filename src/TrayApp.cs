@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -45,7 +46,9 @@ namespace BrightnessTray
             IntPtr h = _flyout.Handle;
 
             _contextMenu = new ContextMenuStrip();
-            _contextMenu.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
+            _contextMenu.Renderer = new DarkMenuRenderer();
+            _contextMenu.Font = new Font("Segoe UI", 9.0f, FontStyle.Regular);
+            _contextMenu.ForeColor = Theme.TextPrimary;
             BuildContextMenu();
 
             _notifyIcon = new NotifyIcon();
@@ -151,6 +154,9 @@ namespace BrightnessTray
             _contextMenu.Items.Add(_menuShowAllInputs);
 
             _menuScrollStep = new ToolStripMenuItem("Scroll step");
+            _menuScrollStep.DropDown.Font = new Font("Segoe UI", 9.0f, FontStyle.Regular);
+            _menuScrollStep.DropDown.ForeColor = Theme.TextPrimary;
+            _menuScrollStep.DropDown.Renderer = new DarkMenuRenderer();
             int[] steps = new int[] { 1, 2, 5, 10, 20 };
             foreach (int s in steps)
             {
@@ -563,23 +569,95 @@ namespace BrightnessTray
         }
     }
 
+    public class DarkMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public DarkMenuRenderer() : base(new DarkColorTable())
+        {
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled ? Theme.TextPrimary : Theme.TextSecondary;
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+        {
+            e.ArrowColor = Theme.TextPrimary;
+            base.OnRenderArrow(e);
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (e.Item.Selected && e.Item.Enabled)
+            {
+                Rectangle rect = new Rectangle(2, 1, e.Item.Width - 4, e.Item.Height - 2);
+                using (SolidBrush brush = new SolidBrush(Color.FromArgb(60, 60, 60)))
+                using (GraphicsPath path = Theme.CreateRoundedRectangle(rect, 4.0f))
+                {
+                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    e.Graphics.FillPath(brush, path);
+                }
+            }
+            else
+            {
+                base.OnRenderMenuItemBackground(e);
+            }
+        }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            int boxSize = 16;
+            Rectangle rect = new Rectangle(4, (e.Item.Height - boxSize) / 2, boxSize, boxSize);
+            Color accent = Theme.GetAccentColor();
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(45, accent)))
+            using (Pen pen = new Pen(accent, 1.0f))
+            using (GraphicsPath path = Theme.CreateRoundedRectangle(rect, 3.0f))
+            {
+                e.Graphics.FillPath(brush, path);
+                e.Graphics.DrawPath(pen, path);
+            }
+
+            using (Pen checkPen = new Pen(accent, 2.0f))
+            {
+                checkPen.StartCap = LineCap.Round;
+                checkPen.EndCap = LineCap.Round;
+                PointF p1 = new PointF(rect.Left + 3.5f, rect.Top + 8.0f);
+                PointF p2 = new PointF(rect.Left + 6.5f, rect.Top + 11.5f);
+                PointF p3 = new PointF(rect.Left + 12.5f, rect.Top + 4.5f);
+                e.Graphics.DrawLines(checkPen, new PointF[] { p1, p2, p3 });
+            }
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            int y = e.Item.Height / 2;
+            using (Pen pen = new Pen(Theme.Separator, 1.0f))
+            {
+                e.Graphics.DrawLine(pen, 10, y, e.Item.Width - 10, y);
+            }
+        }
+    }
+
     public class DarkColorTable : ProfessionalColorTable
     {
-        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(43, 43, 43); } }
-        public override Color MenuBorder { get { return Color.FromArgb(70, 70, 70); } }
+        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(36, 36, 36); } }
+        public override Color MenuBorder { get { return Theme.Border; } }
         public override Color MenuItemBorder { get { return Color.Transparent; } }
         public override Color MenuItemSelected { get { return Color.FromArgb(60, 60, 60); } }
         public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(60, 60, 60); } }
         public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(60, 60, 60); } }
         public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(75, 75, 75); } }
         public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(75, 75, 75); } }
-        public override Color SeparatorDark { get { return Color.FromArgb(65, 65, 65); } }
+        public override Color SeparatorDark { get { return Theme.Separator; } }
         public override Color SeparatorLight { get { return Color.Transparent; } }
-        public override Color ImageMarginGradientBegin { get { return Color.FromArgb(43, 43, 43); } }
-        public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(43, 43, 43); } }
-        public override Color ImageMarginGradientEnd { get { return Color.FromArgb(43, 43, 43); } }
-        public override Color CheckBackground { get { return Color.FromArgb(70, 70, 70); } }
-        public override Color CheckSelectedBackground { get { return Color.FromArgb(85, 85, 85); } }
-        public override Color CheckPressedBackground { get { return Color.FromArgb(90, 90, 90); } }
+        public override Color ImageMarginGradientBegin { get { return Color.FromArgb(36, 36, 36); } }
+        public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(36, 36, 36); } }
+        public override Color ImageMarginGradientEnd { get { return Color.FromArgb(36, 36, 36); } }
+        public override Color CheckBackground { get { return Color.FromArgb(60, 60, 60); } }
+        public override Color CheckSelectedBackground { get { return Color.FromArgb(75, 75, 75); } }
+        public override Color CheckPressedBackground { get { return Color.FromArgb(80, 80, 80); } }
     }
 }
