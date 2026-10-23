@@ -39,10 +39,18 @@ namespace BrightnessTray
                 // We now own the mutex, so this is the active single instance.
                 createdNew = true;
             }
-            catch
+            catch (Exception ex)
             {
+                LogError(ex);
                 createdNew = false;
             }
+
+            try
+            {
+                string logPath = Settings.GetErrorLogFilePath();
+                File.AppendAllText(logPath, string.Format("[{0:yyyy-MM-dd HH:mm:ss}] Program.Main createdNew={1}\r\n", DateTime.Now, createdNew));
+            }
+            catch { }
 
             if (!createdNew)
             {

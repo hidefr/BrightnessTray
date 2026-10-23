@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -310,7 +311,7 @@ namespace BrightnessTray
             }
         }
 
-        public void SetInputAsync(byte inputCode, Action onCompleted)
+        public void SetInputAsync(byte inputCode, Action<bool> onCompleted)
         {
             if (Method != ControlMethod.DdcCi || PhysicalMonitorHandle == IntPtr.Zero)
                 return;
@@ -319,30 +320,89 @@ namespace BrightnessTray
 
             ThreadPool.QueueUserWorkItem(delegate
             {
+                bool success = false;
+                int err = 0;
                 lock (_ioLock)
                 {
                     if (!_disposed && PhysicalMonitorHandle != IntPtr.Zero)
                     {
-                        uint code8 = (uint)inputCode;
-                        uint code16 = (uint)((inputCode << 8) | inputCode);
+                        uint code = (uint)inputCode;
 
-                        // Try standard 8-bit code
-                        bool ok = Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code8);
-                        // Also try 16-bit word (Dell MCCS requirement on several UltraSharp firmware models)
-                        Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code16);
-
-                        // If not acknowledged, retry after short pause
-                        if (!ok)
+                        // Try setting VCP 0x60 (single byte code)
+                        for (int attempt = 0; attempt < 3; attempt++)
                         {
+                            if (Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code))
+                            {
+                                success = true;
+                                break;
+                            }
+                            err = Marshal.GetLastWin32Error();
                             Thread.Sleep(50);
-                            Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code8);
-                            Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code16);
+                        }
+
+                        // If failed, attempt to refresh physical monitor handle
+                        if (!success && !string.IsNullOrEmpty(GdiDeviceName))
+                        {
+                            IntPtr freshHandle = IntPtr.Zero;
+                            Native.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate(IntPtr hMon, IntPtr hdc, ref Native.RECT rc, IntPtr data)
+                            {
+                                Native.MONITORINFOEX mi = new Native.MONITORINFOEX();
+                                if (Native.GetMonitorInfo(hMon, mi) && string.Equals(mi.szDevice, GdiDeviceName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    uint num = 0;
+                                    if (Native.GetNumberOfPhysicalMonitorsFromHMONITOR(hMon, out num) && num > 0)
+                                    {
+                                        Native.PHYSICAL_MONITOR[] phys = new Native.PHYSICAL_MONITOR[num];
+                                        if (Native.GetPhysicalMonitorsFromHMONITOR(hMon, num, phys))
+                                        {
+                                            freshHandle = phys[0].hPhysicalMonitor;
+                                            for (int j = 1; j < num; j++)
+                                            {
+                                                Native.DestroyPhysicalMonitor(phys[j].hPhysicalMonitor);
+                                            }
+                                        }
+                                    }
+                                    return false;
+                                }
+                                return true;
+                            }, IntPtr.Zero);
+
+                            if (freshHandle != IntPtr.Zero)
+                            {
+                                if (PhysicalMonitorHandle != IntPtr.Zero)
+                                {
+                                    Native.DestroyPhysicalMonitor(PhysicalMonitorHandle);
+                                }
+                                PhysicalMonitorHandle = freshHandle;
+
+                                for (int attempt = 0; attempt < 2; attempt++)
+                                {
+                                    if (Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code))
+                                    {
+                                        success = true;
+                                        break;
+                                    }
+                                    err = Marshal.GetLastWin32Error();
+                                    Thread.Sleep(50);
+                                }
+                            }
                         }
                     }
                 }
+
+                // Log result to error.log
+                try
+                {
+                    string logPath = Settings.GetErrorLogFilePath();
+                    string msg = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] SetInput(0x{1:X2}) => success={2}, err={3}\r\n",
+                        DateTime.Now, inputCode, success, err);
+                    File.AppendAllText(logPath, msg);
+                }
+                catch { }
+
                 if (onCompleted != null)
                 {
-                    onCompleted();
+                    onCompleted(success);
                 }
             });
         }

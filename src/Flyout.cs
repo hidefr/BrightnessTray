@@ -591,11 +591,15 @@ namespace BrightnessTray
                 _settings.SetInputConnected(monId, currentCode, true);
                 SyncValues();
 
-                mon.SetInputAsync(currentCode, delegate
+                mon.SetInputAsync(currentCode, delegate(bool ok)
                 {
                     BeginInvoke((Action)delegate
                     {
-                        Rebuild();
+                        if (!ok)
+                        {
+                            mon.RefreshHardwareBrightness();
+                        }
+                        SyncValues();
                     });
                 });
             };

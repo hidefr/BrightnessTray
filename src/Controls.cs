@@ -509,13 +509,8 @@ namespace BrightnessTray
             base.OnMouseUp(e);
             if (e.Button == MouseButtons.Left)
             {
-                bool wasPressed = _isPressed;
                 _isPressed = false;
                 Invalidate();
-                if (wasPressed && ClientRectangle.Contains(e.Location))
-                {
-                    OnClick(EventArgs.Empty);
-                }
             }
         }
 
