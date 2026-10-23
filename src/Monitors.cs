@@ -222,6 +222,13 @@ namespace BrightnessTray
                         }
                         Thread.Sleep(40);
                     }
+
+                    // Also refresh active input VCP 0x60
+                    uint inPvct, inCur, inMax;
+                    if (Native.GetVCPFeatureAndVCPFeatureReply(PhysicalMonitorHandle, 0x60, out inPvct, out inCur, out inMax))
+                    {
+                        CurrentInput = (byte)(inCur & 0xFF);
+                    }
                 }
                 else if (Method == ControlMethod.BuiltIn && !string.IsNullOrEmpty(WmiInstanceName))
                 {
@@ -316,7 +323,21 @@ namespace BrightnessTray
                 {
                     if (!_disposed && PhysicalMonitorHandle != IntPtr.Zero)
                     {
-                        Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, (uint)inputCode);
+                        uint code8 = (uint)inputCode;
+                        uint code16 = (uint)((inputCode << 8) | inputCode);
+
+                        // Try standard 8-bit code
+                        bool ok = Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code8);
+                        // Also try 16-bit word (Dell MCCS requirement on several UltraSharp firmware models)
+                        Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code16);
+
+                        // If not acknowledged, retry after short pause
+                        if (!ok)
+                        {
+                            Thread.Sleep(50);
+                            Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code8);
+                            Native.SetVCPFeature(PhysicalMonitorHandle, 0x60, code16);
+                        }
                     }
                 }
                 if (onCompleted != null)
@@ -535,6 +556,11 @@ namespace BrightnessTray
                             if (ddcOk)
                             {
                                 dm.Method = ControlMethod.DdcCi;
+                                uint inPvct, inCur, inMax;
+                                if (Native.GetVCPFeatureAndVCPFeatureReply(dm.PhysicalMonitorHandle, 0x60, out inPvct, out inCur, out inMax))
+                                {
+                                    dm.CurrentInput = (byte)(inCur & 0xFF);
+                                }
                             }
                             else if (isInternal)
                             {

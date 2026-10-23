@@ -440,13 +440,15 @@ namespace BrightnessTray
         private bool _isHovered = false;
         private bool _isConnected = false;
         private bool _isDimmed = false;
+        private bool _isPressed = false;
 
         public PillButton()
         {
             SetStyle(ControlStyles.UserPaint |
                      ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.OptimizedDoubleBuffer |
-                     ControlStyles.ResizeRedraw, true);
+                     ControlStyles.ResizeRedraw |
+                     ControlStyles.StandardClick, true);
             Height = 26;
             Width = 90;
             Font = new Font("Segoe UI", 8.25f, FontStyle.Regular);
@@ -492,6 +494,31 @@ namespace BrightnessTray
             }
         }
 
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left)
+            {
+                _isPressed = true;
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (e.Button == MouseButtons.Left)
+            {
+                bool wasPressed = _isPressed;
+                _isPressed = false;
+                Invalidate();
+                if (wasPressed && ClientRectangle.Contains(e.Location))
+                {
+                    OnClick(EventArgs.Empty);
+                }
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -515,6 +542,12 @@ namespace BrightnessTray
             {
                 bg = accent;
                 fg = Theme.IsColorLight(accent) ? Color.Black : Theme.TextPrimary;
+            }
+            else if (_isPressed)
+            {
+                bg = Color.FromArgb(60, 60, 60);
+                fg = Theme.TextPrimary;
+                borderColor = Color.FromArgb(110, 110, 110);
             }
             else if (_isHovered)
             {
@@ -558,14 +591,29 @@ namespace BrightnessTray
                 float textLeft = rect.Left;
                 float textWidth = rect.Width;
 
-                if (_isSelected || _isConnected)
+                if (_isSelected)
                 {
+                    // Active input indicator: contrasting white or black dot
                     float dotSize = 6.0f;
                     float dotX = rect.Left + 10.0f;
                     float dotY = rect.Top + (rect.Height - dotSize) / 2.0f;
-                    Color dotColor = _isSelected 
-                        ? (Theme.IsColorLight(accent) ? Color.Black : Color.White) 
-                        : Color.FromArgb(16, 185, 129); // Emerald green
+                    Color dotColor = Theme.IsColorLight(accent) ? Color.Black : Color.White;
+
+                    using (SolidBrush dotBrush = new SolidBrush(dotColor))
+                    {
+                        g.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                    }
+
+                    textLeft = rect.Left + 14.0f;
+                    textWidth = rect.Width - 16.0f;
+                }
+                else if (_isConnected)
+                {
+                    // Connected/detected indicator: emerald green dot
+                    float dotSize = 6.0f;
+                    float dotX = rect.Left + 10.0f;
+                    float dotY = rect.Top + (rect.Height - dotSize) / 2.0f;
+                    Color dotColor = Color.FromArgb(16, 185, 129); // Emerald green
 
                     using (SolidBrush dotBrush = new SolidBrush(dotColor))
                     {

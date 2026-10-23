@@ -8,6 +8,7 @@ namespace BrightnessTray
     public class Flyout : Form
     {
         private DateTime _lastHideTime = DateTime.MinValue;
+        private bool _isMenuOpen = false;
         private List<DisplayMonitor> _monitors = new List<DisplayMonitor>();
         private Settings _settings;
         private Action _onRefreshClicked;
@@ -96,6 +97,7 @@ namespace BrightnessTray
 
         protected override void OnDeactivate(EventArgs e)
         {
+            if (_isMenuOpen) return;
             base.OnDeactivate(e);
             _lastHideTime = DateTime.UtcNow;
             Hide();
@@ -585,7 +587,10 @@ namespace BrightnessTray
 
             btn.Click += delegate
             {
+                mon.CurrentInput = currentCode;
                 _settings.SetInputConnected(monId, currentCode, true);
+                SyncValues();
+
                 mon.SetInputAsync(currentCode, delegate
                 {
                     BeginInvoke((Action)delegate
@@ -593,13 +598,14 @@ namespace BrightnessTray
                         Rebuild();
                     });
                 });
-                SyncValues();
             };
 
             ContextMenuStrip btnMenu = new ContextMenuStrip();
             btnMenu.Renderer = new DarkMenuRenderer();
             btnMenu.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular);
             btnMenu.ForeColor = Theme.TextPrimary;
+            btnMenu.Opened += delegate { _isMenuOpen = true; };
+            btnMenu.Closed += delegate { _isMenuOpen = false; };
 
             if (isConnected)
             {
