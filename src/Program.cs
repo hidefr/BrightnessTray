@@ -33,6 +33,12 @@ namespace BrightnessTray
             {
                 _singleInstanceMutex = new Mutex(true, MutexName, out createdNew);
             }
+            catch (AbandonedMutexException)
+            {
+                // The previous instance terminated without releasing the mutex.
+                // We now own the mutex, so this is the active single instance.
+                createdNew = true;
+            }
             catch
             {
                 createdNew = false;
@@ -86,9 +92,10 @@ namespace BrightnessTray
                     {
                         if (!timedOut)
                         {
-                            SynchronizationContext sc = SynchronizationContext.Current;
-                            // Post to UI thread
-                            app.ShowFlyout();
+                            app.Post(delegate
+                            {
+                                app.ShowFlyout();
+                            });
                         }
                     },
                     null,

@@ -26,7 +26,6 @@ namespace BrightnessTray
 
         private Native.RECT _cachedTrayRect;
         private int _accumulatedWheelDelta = 0;
-        private readonly SynchronizationContext _syncContext;
 
         private ToolStripMenuItem _menuOpen;
         private ToolStripMenuItem _menuRefresh;
@@ -39,10 +38,11 @@ namespace BrightnessTray
 
         public TrayApp(bool startSilent)
         {
-            _syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             _settings = Settings.Load();
 
             _flyout = new Flyout();
+            // Force handle creation on the UI thread so BeginInvoke and InvokeRequired work from any thread
+            IntPtr h = _flyout.Handle;
 
             _contextMenu = new ContextMenuStrip();
             _contextMenu.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
@@ -86,12 +86,31 @@ namespace BrightnessTray
 
             if (!startSilent)
             {
-                // Schedule opening the flyout as soon as initial load begins
-                _syncContext.Post(delegate
+                Post(delegate
                 {
                     ShowFlyout();
-                }, null);
+                });
             }
+        }
+
+        public void Post(Action action)
+        {
+            if (action == null) return;
+            try
+            {
+                if (_flyout != null && !_flyout.IsDisposed)
+                {
+                    if (_flyout.InvokeRequired)
+                    {
+                        _flyout.BeginInvoke(action);
+                    }
+                    else
+                    {
+                        action();
+                    }
+                }
+            }
+            catch { }
         }
 
         private void BuildContextMenu()
@@ -231,11 +250,11 @@ namespace BrightnessTray
                     m.RefreshHardwareBrightness();
                 }
 
-                _syncContext.Post(delegate
+                Post(delegate
                 {
                     _flyout.SyncValues();
                     UpdateTrayIconAndTooltip();
-                }, null);
+                });
             });
         }
 
@@ -265,11 +284,11 @@ namespace BrightnessTray
                     }
                 });
 
-                _syncContext.Post(delegate
+                Post(delegate
                 {
                     RebuildFlyout();
                     UpdateTrayIconAndTooltip();
-                }, null);
+                });
 
                 // Now fetch capabilities for external monitors in background
                 foreach (DisplayMonitor m in newList)
@@ -280,10 +299,10 @@ namespace BrightnessTray
                         ThreadPool.QueueUserWorkItem(delegate
                         {
                             current.RefreshCapabilities();
-                            _syncContext.Post(delegate
+                            Post(delegate
                             {
                                 _flyout.SyncValues();
-                            }, null);
+                            });
                         });
                     }
                 }
@@ -414,10 +433,10 @@ namespace BrightnessTray
                 if (_cachedTrayRect.Width > 0 && _cachedTrayRect.Contains(mouseStruct.pt.x, mouseStruct.pt.y))
                 {
                     short wheelDelta = (short)((mouseStruct.mouseData >> 16) & 0xffff);
-                    _syncContext.Post(delegate
+                    Post(delegate
                     {
                         OnTrayMouseWheel(wheelDelta);
-                    }, null);
+                    });
 
                     // Swallow event so window under taskbar doesn't scroll
                     return (IntPtr)1;
