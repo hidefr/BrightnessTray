@@ -438,6 +438,8 @@ namespace BrightnessTray
     {
         private bool _isSelected = false;
         private bool _isHovered = false;
+        private bool _isConnected = false;
+        private bool _isDimmed = false;
 
         public PillButton()
         {
@@ -464,6 +466,32 @@ namespace BrightnessTray
             }
         }
 
+        public bool IsConnected
+        {
+            get { return _isConnected; }
+            set
+            {
+                if (_isConnected != value)
+                {
+                    _isConnected = value;
+                    Invalidate();
+                }
+            }
+        }
+
+        public bool IsDimmed
+        {
+            get { return _isDimmed; }
+            set
+            {
+                if (_isDimmed != value)
+                {
+                    _isDimmed = value;
+                    Invalidate();
+                }
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
@@ -481,6 +509,7 @@ namespace BrightnessTray
             Color accent = Theme.GetAccentColor();
             Color bg;
             Color fg;
+            Color borderColor = Color.Transparent;
 
             if (_isSelected)
             {
@@ -491,6 +520,19 @@ namespace BrightnessTray
             {
                 bg = Theme.ButtonHover;
                 fg = Theme.TextPrimary;
+                borderColor = Color.FromArgb(90, 90, 90);
+            }
+            else if (_isConnected)
+            {
+                bg = Theme.ButtonRest;
+                fg = Theme.TextPrimary;
+                borderColor = Color.FromArgb(70, 70, 70);
+            }
+            else if (_isDimmed)
+            {
+                bg = Color.FromArgb(36, 36, 36);
+                fg = Color.FromArgb(150, 150, 150);
+                borderColor = Color.FromArgb(50, 50, 50);
             }
             else
             {
@@ -505,13 +547,43 @@ namespace BrightnessTray
                     g.FillPath(brush, path);
                 }
 
+                if (borderColor != Color.Transparent)
+                {
+                    using (Pen borderPen = new Pen(borderColor, 1.0f))
+                    {
+                        g.DrawPath(borderPen, path);
+                    }
+                }
+
+                float textLeft = rect.Left;
+                float textWidth = rect.Width;
+
+                if (_isSelected || _isConnected)
+                {
+                    float dotSize = 6.0f;
+                    float dotX = rect.Left + 10.0f;
+                    float dotY = rect.Top + (rect.Height - dotSize) / 2.0f;
+                    Color dotColor = _isSelected 
+                        ? (Theme.IsColorLight(accent) ? Color.Black : Color.White) 
+                        : Color.FromArgb(16, 185, 129); // Emerald green
+
+                    using (SolidBrush dotBrush = new SolidBrush(dotColor))
+                    {
+                        g.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                    }
+
+                    textLeft = rect.Left + 14.0f;
+                    textWidth = rect.Width - 16.0f;
+                }
+
+                RectangleF textRect = new RectangleF(textLeft, rect.Top, textWidth, rect.Height);
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Center;
                     sf.LineAlignment = StringAlignment.Center;
                     using (SolidBrush textBrush = new SolidBrush(fg))
                     {
-                        g.DrawString(Text, Font, textBrush, rect, sf);
+                        g.DrawString(Text, Font, textBrush, textRect, sf);
                     }
                 }
             }

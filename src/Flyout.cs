@@ -20,6 +20,7 @@ namespace BrightnessTray
         private readonly Dictionary<string, Label> _valueLabels = new Dictionary<string, Label>();
         private readonly Dictionary<string, Label> _inputCaptions = new Dictionary<string, Label>();
         private readonly Dictionary<string, List<PillButton>> _inputButtons = new Dictionary<string, List<PillButton>>();
+        private readonly Dictionary<string, bool> _otherExpanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         private float _dpiScale = 1.0f;
 
@@ -336,6 +337,12 @@ namespace BrightnessTray
                 }
                 else if (mon.Method == ControlMethod.DdcCi)
                 {
+                    // Ensure active input is marked as connected
+                    if (mon.CurrentInput.HasValue)
+                    {
+                        _settings.EnsureActiveInputConnected(mon.Id, mon.CurrentInput.Value);
+                    }
+
                     // Input source caption
                     Label lblInputCaption = new Label();
                     lblInputCaption.Text = mon.IsReadingCapabilities ? "Input source (reading monitor…)" : "Input source";
@@ -347,54 +354,91 @@ namespace BrightnessTray
                     _inputCaptions[mon.Id] = lblInputCaption;
                     curY += lblInputCaption.PreferredHeight + S(8);
 
-                    // FlowPanel with PillButtons
-                    FlowLayoutPanel flowInputs = new FlowLayoutPanel();
-                    flowInputs.Width = contentWidth;
-                    flowInputs.AutoSize = true;
-                    flowInputs.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-                    flowInputs.FlowDirection = FlowDirection.LeftToRight;
-                    flowInputs.WrapContents = true;
-                    flowInputs.Location = new Point(pad, curY);
-                    flowInputs.Margin = Padding.Empty;
-                    flowInputs.Padding = Padding.Empty;
+                    List<byte> allInputs = mon.GetEffectiveInputs(_settings.ShowAllInputs);
+                    List<byte> connectedInputs = new List<byte>();
+                    List<byte> otherInputs = new List<byte>();
 
-                    List<byte> inputs = mon.GetEffectiveInputs(_settings.ShowAllInputs);
-                    List<PillButton> buttons = new List<PillButton>();
-
-                    foreach (byte code in inputs)
+                    foreach (byte code in allInputs)
                     {
-                        PillButton btn = new PillButton();
-                        btn.Text = InputSource.GetInputName(code);
-                        btn.Tag = code;
-                        btn.Height = S(26);
-                        using (Graphics g = CreateGraphics())
+                        bool isCurrent = mon.CurrentInput.HasValue && mon.CurrentInput.Value == code;
+                        if (_settings.IsInputConnected(mon.Id, code, isCurrent))
                         {
-                            SizeF sz = g.MeasureString(btn.Text, btn.Font);
-                            btn.Width = Math.Max(S(70), (int)Math.Ceiling(sz.Width) + S(24));
+                            connectedInputs.Add(code);
                         }
-                        btn.Margin = new Padding(0, 0, S(6), S(6));
-                        btn.IsSelected = (mon.CurrentInput.HasValue && mon.CurrentInput.Value == code);
-
-                        byte currentCode = code;
-                        btn.Click += delegate
+                        else
                         {
-                            mon.SetInputAsync(currentCode, delegate
-                            {
-                                BeginInvoke((Action)delegate
-                                {
-                                    SyncValues();
-                                });
-                            });
-                            SyncValues();
-                        };
-
-                        buttons.Add(btn);
-                        flowInputs.Controls.Add(btn);
+                            otherInputs.Add(code);
+                        }
                     }
 
-                    _inputButtons[mon.Id] = buttons;
-                    _contentPanel.Controls.Add(flowInputs);
-                    curY += flowInputs.PreferredSize.Height + S(10);
+                    // If no connected inputs identified yet, default to first or active
+                    if (connectedInputs.Count == 0 && allInputs.Count > 0)
+                    {
+                        connectedInputs.Add(allInputs[0]);
+                        otherInputs.Remove(allInputs[0]);
+                    }
+
+                    List<PillButton> monitorButtons = new List<PillButton>();
+
+                    // 1. Render Connected Inputs (shown first, highlighted with green/accent indicator dot)
+                    List<PillButton> connectedButtons = new List<PillButton>();
+                    foreach (byte code in connectedInputs)
+                    {
+                        PillButton btn = CreateInputPillButton(mon, code, true);
+                        connectedButtons.Add(btn);
+                        monitorButtons.Add(btn);
+                    }
+
+                    curY = LayoutPillButtons(connectedButtons, pad, curY, contentWidth, S(6), S(6));
+
+                    // 2. Render Other Inputs section (collapsible so user won't click unconnected ports by mistake)
+                    if (otherInputs.Count > 0)
+                    {
+                        bool isExpanded = _otherExpanded.ContainsKey(mon.Id) && _otherExpanded[mon.Id];
+
+                        Label lblToggle = new Label();
+                        lblToggle.Text = isExpanded
+                            ? "▾ Hide other ports"
+                            : string.Format("▸ Other ports ({0})", otherInputs.Count);
+                        lblToggle.Font = new Font("Segoe UI", 8.25f, FontStyle.Regular);
+                        lblToggle.ForeColor = Color.FromArgb(145, 145, 145);
+                        lblToggle.AutoSize = true;
+                        lblToggle.Cursor = Cursors.Hand;
+                        lblToggle.Location = new Point(pad, curY + S(2));
+
+                        string monId = mon.Id;
+                        lblToggle.Click += delegate
+                        {
+                            _otherExpanded[monId] = !isExpanded;
+                            Rebuild();
+                        };
+                        lblToggle.MouseEnter += delegate
+                        {
+                            lblToggle.ForeColor = Color.FromArgb(210, 210, 210);
+                        };
+                        lblToggle.MouseLeave += delegate
+                        {
+                            lblToggle.ForeColor = Color.FromArgb(145, 145, 145);
+                        };
+
+                        _contentPanel.Controls.Add(lblToggle);
+                        curY += lblToggle.PreferredHeight + S(6);
+
+                        if (isExpanded)
+                        {
+                            List<PillButton> otherButtons = new List<PillButton>();
+                            foreach (byte code in otherInputs)
+                            {
+                                PillButton btn = CreateInputPillButton(mon, code, false);
+                                otherButtons.Add(btn);
+                                monitorButtons.Add(btn);
+                            }
+                            curY = LayoutPillButtons(otherButtons, pad, curY, contentWidth, S(6), S(6));
+                        }
+                    }
+
+                    _inputButtons[mon.Id] = monitorButtons;
+                    curY += S(4);
                 }
             }
 
@@ -485,10 +529,107 @@ namespace BrightnessTray
                         {
                             byte code = (byte)btn.Tag;
                             btn.IsSelected = (mon.CurrentInput.HasValue && mon.CurrentInput.Value == code);
+                            btn.IsConnected = _settings.IsInputConnected(mon.Id, code, btn.IsSelected);
+                            btn.IsDimmed = !btn.IsConnected && !btn.IsSelected;
                         }
                     }
                 }
             }
+        }
+
+        private int LayoutPillButtons(List<PillButton> buttons, int startX, int startY, int maxWidth, int spacingX, int spacingY)
+        {
+            int curX = startX;
+            int curY = startY;
+            int rowHeight = S(26);
+
+            for (int i = 0; i < buttons.Count; i++)
+            {
+                PillButton btn = buttons[i];
+                if (curX + btn.Width > startX + maxWidth && curX > startX)
+                {
+                    curX = startX;
+                    curY += rowHeight + spacingY;
+                }
+                btn.Location = new Point(curX, curY);
+                _contentPanel.Controls.Add(btn);
+                curX += btn.Width + spacingX;
+            }
+
+            if (buttons.Count > 0)
+            {
+                return curY + rowHeight + spacingY;
+            }
+            return startY;
+        }
+
+        private PillButton CreateInputPillButton(DisplayMonitor mon, byte code, bool isConnected)
+        {
+            PillButton btn = new PillButton();
+            btn.Text = InputSource.GetInputName(code);
+            btn.Tag = code;
+            btn.Height = S(26);
+            btn.IsSelected = (mon.CurrentInput.HasValue && mon.CurrentInput.Value == code);
+            btn.IsConnected = isConnected;
+            btn.IsDimmed = !isConnected && !btn.IsSelected;
+
+            using (Graphics g = CreateGraphics())
+            {
+                SizeF sz = g.MeasureString(btn.Text, btn.Font);
+                int extra = (btn.IsSelected || btn.IsConnected) ? S(34) : S(22);
+                btn.Width = Math.Max(S(70), (int)Math.Ceiling(sz.Width) + extra);
+            }
+
+            byte currentCode = code;
+            string monId = mon.Id;
+
+            btn.Click += delegate
+            {
+                _settings.SetInputConnected(monId, currentCode, true);
+                mon.SetInputAsync(currentCode, delegate
+                {
+                    BeginInvoke((Action)delegate
+                    {
+                        Rebuild();
+                    });
+                });
+                SyncValues();
+            };
+
+            ContextMenuStrip btnMenu = new ContextMenuStrip();
+            btnMenu.Renderer = new DarkMenuRenderer();
+            btnMenu.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular);
+            btnMenu.ForeColor = Theme.TextPrimary;
+
+            if (isConnected)
+            {
+                ToolStripMenuItem miDisconnect = new ToolStripMenuItem("Mark as not connected");
+                miDisconnect.Enabled = !btn.IsSelected;
+                miDisconnect.Click += delegate
+                {
+                    _settings.SetInputConnected(monId, currentCode, false);
+                    Rebuild();
+                };
+                btnMenu.Items.Add(miDisconnect);
+            }
+            else
+            {
+                ToolStripMenuItem miConnect = new ToolStripMenuItem("Mark as connected");
+                miConnect.Click += delegate
+                {
+                    _settings.SetInputConnected(monId, currentCode, true);
+                    Rebuild();
+                };
+                btnMenu.Items.Add(miConnect);
+            }
+
+            btn.ContextMenuStrip = btnMenu;
+            return btn;
+        }
+
+        public void Rebuild()
+        {
+            Build(_monitors, _settings, _onRefreshClicked, _onLinkChanged, _onValuesChanged);
         }
     }
 }

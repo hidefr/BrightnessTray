@@ -307,7 +307,7 @@ namespace BrightnessTray
                             current.RefreshCapabilities();
                             Post(delegate
                             {
-                                _flyout.SyncValues();
+                                RebuildFlyout();
                             });
                         });
                     }
